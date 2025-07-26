@@ -24,8 +24,13 @@ day_of_week int
 )
 
 
-/* ---------- Loading the Dataset ---------- */
+/* ---------- Removes all active SQL modes  ---------- */
 SET SESSION sql_mode = ''
+
+
+
+/* ---------- Loading the Dataset ---------- */
+
 load data infile 
 "D:/Prot/Data Analyst/Google Analytics/Capestone Projects/First_case_study_19-05-25/CSV Files/my_dataset.csv"
 into table cyclist 
