@@ -167,12 +167,3 @@ ROUND((c.Class_Sales*100/y.Total_Sales),2) AS Market_Share_Percentage
 FROM class_sales c INNER JOIN yearly_total_sales y
 ON c.`Year` = y.`Year`
 ORDER BY c.`Year`,Market_Share_Percentage DESC;
-
-
-
-
-SELECT * FROM EV
-
-
-
-
