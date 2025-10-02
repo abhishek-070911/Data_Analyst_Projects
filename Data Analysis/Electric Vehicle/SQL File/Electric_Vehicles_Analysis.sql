@@ -1,6 +1,6 @@
 /* ---------- Creating  Database ---------- */
-CREATE DATABASE Electric_Vehicles
-USE Electric_Vehicles
+CREATE DATABASE Electric_Vehicles;
+USE Electric_Vehicles;
 
 
 /* ---------- Creating Table ---------- */
@@ -14,7 +14,7 @@ Vehicle_Class VARCHAR(200),
 Vehicle_Category VARCHAR(200),
 Vehicle_Type VARCHAR(200),
 EV_Sales_Quantity INT
-)
+);
 
 
 /* ---------- Loading the Dataset ---------- */
@@ -24,7 +24,6 @@ fields terminated by ','
 enclosed by '"'
 lines terminated by '\n'
 ignore 1 rows;
-
 
 
 /* ---------- Cleaning the dataset ---------- */
