@@ -42,6 +42,12 @@ lines terminated by '\n'
 ignore 1 rows;
 
 
+/* ---------- Excluding rows from before TCS was listed ---------- */
+-- TCS was listed on the NSE on 25 Aug 2004, but this file starts on 12 Aug 2002.
+-- The 231 earlier rows are not real market trading, so the long-run figures below use this view.
+CREATE VIEW LISTED_HISTORY AS SELECT * FROM STOCK_HISTORY WHERE `Date` >= '2004-08-25';
+
+
 /* ---------- Querying the dataset after loading ---------- */
 /* ---------- Querying the dataset after loading ---------- */
 SELECT * FROM STOCK_HISTORY;
@@ -62,7 +68,7 @@ SELECT `Date`,`Close` FROM STOCK_HISTORY ORDER BY `Close` DESC;
 SELECT `Date`,High FROM STOCK_HISTORY ORDER BY High DESC;
 
 
-/* ---------- Checking FY 2021-2022 ---------- */
+/* ---------- Checking calendar year 2021 ---------- */
 SELECT * FROM STOCK_HISTORY WHERE YEAR(`Date`) = 2021 ORDER BY High DESC;
 
 
@@ -71,27 +77,27 @@ SELECT `Date`,`Close` FROM STOCK_HISTORY WHERE `Close` > 3000 ORDER BY `Close`;
 
 
 /* ---------- Finding the highest closing price and its date ---------- */
-SELECT * FROM (SELECT `Date`,`Close`,DENSE_RANK() OVER(ORDER BY `Close` DESC) AS Rank_no FROM STOCK_HISTORY) AS Ranked WHERE Rank_no =3;
+SELECT * FROM (SELECT `Date`,`Close`,DENSE_RANK() OVER(ORDER BY `Close` DESC) AS Rank_no FROM STOCK_HISTORY) AS Ranked WHERE Rank_no = 1;
 
 
 /* ---------- Calculating average closing price for each year ---------- */
-SELECT YEAR(`Date`) AS `Year`, ROUND(AVG(`Close`),2) AS Avg_closing_price FROM STOCK_HISTORY GROUP BY `Year` ORDER BY `Year`;
+SELECT YEAR(`Date`) AS `Year`, ROUND(AVG(`Close`),2) AS Avg_closing_price FROM LISTED_HISTORY GROUP BY `Year` ORDER BY `Year`;
 
 
 /* ---------- Calculating the total traded volume per month ---------- */
-SELECT YEAR(`Date`) AS `Year`, MONTH(`Date`) AS `Month`,SUM(Volume) AS Total_volume_per_month FROM STOCK_HISTORY GROUP BY YEAR,MONTH ORDER BY YEAR,MONTH;
+SELECT YEAR(`Date`) AS `Year`, MONTH(`Date`) AS `Month`,SUM(Volume) AS Total_volume_per_month FROM LISTED_HISTORY GROUP BY YEAR,MONTH ORDER BY YEAR,MONTH;
 
 
 /* ---------- Counting how many days stock closed above ₹2000 in each year ---------- */
-SELECT YEAR(`Date`) AS `Year`, COUNT(*) AS Days_Above_3500 FROM STOCK_HISTORY WHERE `Close` > 2000 GROUP BY `Year` ORDER BY `Year`;
+SELECT YEAR(`Date`) AS `Year`, COUNT(*) AS Days_Above_2000 FROM STOCK_HISTORY WHERE `Close` > 2000 GROUP BY `Year` ORDER BY `Year`;
 
 
 /* ---------- Finding percentage change in stock price from open to close for each day ---------- */
-SELECT DAY(`Date`) AS Day,`Open`,`Close`, ROUND((`Open` - `Close`)*100/(`Open`),2) AS Daily_Return_Percent FROM STOCK_HISTORY ORDER BY Day;
+SELECT `Date`,`Open`,`Close`, ROUND((`Close` - `Open`)*100/(`Open`),2) AS Daily_Return_Percent FROM STOCK_HISTORY ORDER BY `Date`;
 
 
 /* ---------- Calculating daily price difference ---------- */
-SELECT DAY(`Date`) AS Day,ROUND((`Close` - `Open`),2) AS Daily_price_difference FROM STOCK_HISTORY  ORDER BY Day;
+SELECT `Date`,ROUND((`Close` - `Open`),2) AS Daily_price_difference FROM STOCK_HISTORY ORDER BY `Date`;
 
 
 /* ---------- Querying for top 5 highest volume trading days ---------- */
@@ -114,7 +120,7 @@ WITH yearly_prices AS
 SELECT YEAR(`Date`) AS YEAR,
 FIRST_VALUE(`Close`) OVER(PARTITION BY YEAR(`Date`) ORDER BY `Date`) AS First_Close,
 LAST_VALUE(`Close`) OVER(PARTITION BY YEAR(`Date`) ORDER BY `Date` ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS Last_Close
-FROM STOCK_HISTORY
+FROM LISTED_HISTORY
 )
 SELECT DISTINCT YEAR,ROUND(((Last_Close-First_Close)*100/First_Close),2) AS Yearly_Return_Percent
 FROM yearly_prices;
@@ -123,27 +129,27 @@ FROM yearly_prices;
 /* ---------- Ranking months by average closing price ---------- */
 SELECT YEAR(`Date`) AS `YEAR`,MONTH(`Date`) AS `Month`, ROUND(AVG(`Close`),2) AS Avg_closing_price, 
 RANK() OVER(PARTITION BY YEAR(`Date`) ORDER BY AVG(`Close`) DESC) AS Month_Rank
-FROM STOCK_HISTORY GROUP BY YEAR(`Date`), MONTH(`Date`);
+FROM LISTED_HISTORY GROUP BY YEAR(`Date`), MONTH(`Date`);
 
 
 /* ---------- Finding the best month for investing based on historical average return ---------- */
-SELECT MONTH(`Date`) AS `Month`, ROUND(AVG((`Close` - `Open`)/`Open`)*100,2) AS Avg_Monthly_Daily_Return_Percent FROM STOCK_HISTORY
+SELECT MONTH(`Date`) AS `Month`, ROUND(AVG((`Close` - `Open`)/`Open`)*100,2) AS Avg_Monthly_Daily_Return_Percent FROM LISTED_HISTORY
 GROUP BY `Month` ORDER BY Avg_Monthly_Daily_Return_Percent DESC;
 
 
 /* ---------- Calculating volatility (standard deviation of daily returns) for each year ---------- */
-SELECT YEAR(`Date`) AS `Year`, ROUND(STDDEV_POP((`Close` - `Open`)/`Open`)*100,2) AS Volatility_Percent FROM STOCK_HISTORY
+SELECT YEAR(`Date`) AS `Year`, ROUND(STDDEV_POP((`Close` - `Open`)/`Open`)*100,2) AS Volatility_Percent FROM LISTED_HISTORY
 GROUP BY `Year` ORDER BY Volatility_Percent DESC;
 
 
 /* ---------- Identifying days with gap-up openings (opening > previous day’s close) ---------- */
 WITH prev_price AS (
-SELECT DAY(`Date`) AS `Date`,`Open`,`Close`,
+SELECT `Date`,`Open`,`Close`,
 LAG(`Close`) OVER(ORDER BY `Date`) AS Prev_Close FROM STOCK_HISTORY
 )
 SELECT * FROM prev_price WHERE `Open` > Prev_Close;
 
-SELECT * FROM (SELECT DAY(`Date`) AS `Date`,`Open`,`Close`,
+SELECT * FROM (SELECT `Date`,`Open`,`Close`,
 LAG(`Close`) OVER(ORDER BY `Date`) AS Prev_Close FROM STOCK_HISTORY) AS GAP
 WHERE `Open` > Prev_Close;
 
@@ -152,7 +158,7 @@ WHERE `Open` > Prev_Close;
 WITH daily_returns  AS (
 SELECT `Date`,
 LOG(`Close` / LAG(`Close`) OVER (ORDER BY `Date`)) AS log_return
-FROM STOCK_HISTORY
+FROM LISTED_HISTORY
 )
 SELECT `Date`, ROUND(EXP(SUM(log_return) OVER (ORDER BY `Date`)) -1,4)
 AS Cumulative FROM daily_returns;
@@ -162,7 +168,7 @@ AS Cumulative FROM daily_returns;
 WITH gains AS 
 (
 	SELECT `Date`,
-    CASE WHEN `Close` > LAG(`Close`) OVER (ORDER BY `Date`) THEN 1 ELSE 0 END AS is_gain FROM STOCK_HISTORY
+    CASE WHEN `Close` > LAG(`Close`) OVER (ORDER BY `Date`) THEN 1 ELSE 0 END AS is_gain FROM LISTED_HISTORY
 ),
 grouped AS 
 (
