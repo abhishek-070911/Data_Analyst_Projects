@@ -34,6 +34,19 @@ SET
     Outcome_of_Incident = TRIM(Outcome_of_Incident);
 
 
+/* ---------- Checking the grain of the table ---------- */
+/* One row = one city x Cause_Category x Cause_Subcategory x Outcome_of_Incident.
+   The 6 Cause Categories are 6 different ways of splitting the SAME accidents: for every city,
+   each category adds up to the same totals. Adding rows across categories therefore counts every
+   accident 6 times, and adding across outcomes mixes accidents with people killed or injured
+   ('Total Injured' already includes the two injury rows).
+   Rule used in every query below: compute each total inside ONE Cause_Category and ONE outcome. */
+SELECT City_Name,Cause_Category,SUM(Count_in_mil) AS Total_Accidents FROM Accidents
+WHERE Outcome_of_Incident = 'Total number of Accidents'
+GROUP BY City_Name,Cause_Category ORDER BY City_Name,Cause_Category;
+-- Every city shows the same total in all 6 categories (Chennai: 4389 each time).
+
+
 /* ---------- Querying the dataset after loading ---------- */
 /* ---------- Querying the dataset after loading ---------- */
 SELECT * FROM Accidents;
@@ -48,20 +61,29 @@ SELECT DISTINCT Cause_Category FROM Accidents;
 
 
 /* ---------- Finding all records where Persons were killed in accidents ---------- */
-SELECT * FROM Accidents WHERE Outcome_of_Incident = 'Persons Killed' AND Count_in_mil > 1 ORDER BY Count_in_mil DESC;
+SELECT * FROM Accidents WHERE Outcome_of_Incident = 'Persons Killed' AND Count_in_mil > 0 ORDER BY Count_in_mil DESC;
 
 
 /* ---------- Querying total accidents per city and ranking them ---------- */
 SELECT City_Name,SUM(Count_in_mil) AS Total_Accidents,DENSE_RANK() OVER(ORDER BY SUM(Count_in_mil) DESC) AS Accident_Rank
-FROM Accidents GROUP BY City_Name;
+FROM Accidents WHERE Outcome_of_Incident = 'Total number of Accidents' AND Cause_Category = 'Traffic Violation'
+GROUP BY City_Name ORDER BY Accident_Rank;
 
 
-/* ---------- Calculating the average accident per Cause Category ---------- */
-SELECT Cause_Category,ROUND(AVG(Count_in_mil),2) AS Average_Accidents FROM Accidents GROUP BY Cause_Category ORDER BY Average_Accidents DESC;
+/* ---------- Calculating the share of accidents for each Cause Subcategory within its Cause Category ---------- */
+-- This replaces "average accident per Cause Category". Categories can't be compared with each other,
+-- because each one splits the same accidents; a higher average only meant fewer subcategories.
+SELECT Cause_Category,Cause_Subcategory,SUM(Count_in_mil) AS Total_Accidents,
+ROUND(SUM(Count_in_mil)*100/SUM(SUM(Count_in_mil)) OVER(PARTITION BY Cause_Category),2) AS Percent_of_Category
+FROM Accidents WHERE Outcome_of_Incident = 'Total number of Accidents'
+GROUP BY Cause_Category,Cause_Subcategory ORDER BY Cause_Category,Total_Accidents DESC;
 
 
-/* ---------- Calculating the total accidents per Outcome of Incident ---------- */
-SELECT Outcome_of_Incident,SUM(Count_in_mil) AS Total_Accidents FROM Accidents GROUP BY Outcome_of_Incident ORDER BY Total_Accidents DESC;
+/* ---------- Calculating the totals per Outcome of Incident ---------- */
+-- Accidents and people are different units, so each outcome is its own total.
+-- 'Total Injured' = 'Greviously Injured' + 'Minor Injury'.
+SELECT Outcome_of_Incident,SUM(Count_in_mil) AS Total FROM Accidents WHERE Cause_Category = 'Traffic Violation'
+GROUP BY Outcome_of_Incident ORDER BY Total DESC;
 
 
 /* ---------- Creating a pivot: Cities vs. Outcomes, showing total counts in each outcome type ---------- */
@@ -71,29 +93,46 @@ SELECT City_Name,
     SUM(CASE WHEN Outcome_of_Incident = 'Persons Killed' THEN Count_in_mil ELSE 0 END) AS Persons_Killed,
     SUM(CASE WHEN Outcome_of_Incident = 'Total Injured' THEN Count_in_mil ELSE 0 END) AS Total_Injured,
     SUM(CASE WHEN Outcome_of_Incident = 'Total number of Accidents' THEN Count_in_mil ELSE 0 END) AS Total_number_of_Accidents
-FROM Accidents GROUP BY City_Name ORDER BY City_Name;
+FROM Accidents WHERE Cause_Category = 'Traffic Violation' GROUP BY City_Name ORDER BY City_Name;
 
 
 /* ---------- Finding cities with accident count greater than the average city accident count ---------- */
-SELECT City_Name,SUM(Count_in_mil) AS Total_Accidents FROM Accidents GROUP BY City_Name 
-HAVING Total_Accidents > (SELECT AVG(Count_in_mil) AS Average_Accident FROM Accidents);
+WITH city_accidents AS
+(
+SELECT City_Name,SUM(Count_in_mil) AS Total_Accidents FROM Accidents
+WHERE Outcome_of_Incident = 'Total number of Accidents' AND Cause_Category = 'Traffic Violation'
+GROUP BY City_Name
+)
+SELECT City_Name,Total_Accidents FROM city_accidents
+WHERE Total_Accidents > (SELECT AVG(Total_Accidents) FROM city_accidents) ORDER BY Total_Accidents DESC;
 
 
 /* ---------- Getting the second highest accident count city ---------- */
 SELECT * FROM
 (SELECT City_Name, SUM(Count_in_mil) AS Total_Accidents, DENSE_RANK() OVER(ORDER BY SUM(Count_in_mil) DESC) AS 'Rank'
-FROM Accidents GROUP BY City_Name) AS SUB WHERE `Rank` = 2;
+FROM Accidents WHERE Outcome_of_Incident = 'Total number of Accidents' AND Cause_Category = 'Traffic Violation'
+GROUP BY City_Name) AS SUB WHERE `Rank` = 2;
 
 
 /* ---------- Calculating accidents per city, then finding the percentage contribution of each city to the national total ---------- */
 WITH acc_per_city AS
 (
-SELECT City_Name,SUM(Count_in_mil) AS Total_Accidents FROM Accidents GROUP BY City_Name
+SELECT City_Name,SUM(Count_in_mil) AS Total_Accidents FROM Accidents
+WHERE Outcome_of_Incident = 'Total number of Accidents' AND Cause_Category = 'Traffic Violation'
+GROUP BY City_Name
 )
-SELECT City_Name,Total_Accidents,ROUND((Total_Accidents*100/(SELECT SUM(Count_in_mil) FROM Accidents)),2) AS Percent 
-FROM acc_per_city GROUP BY City_Name,Total_Accidents ORDER BY Percent DESC;
+SELECT City_Name,Total_Accidents,ROUND((Total_Accidents*100/(SELECT SUM(Total_Accidents) FROM acc_per_city)),2) AS Percent
+FROM acc_per_city ORDER BY Percent DESC;
 
 
-/* ---------- Identifying the most dangerous cause (Cause_Subcategory) across all cities ---------- */
-SELECT City_Name,Cause_Subcategory,SUM(Count_in_mil) AS Total_Accident FROM Accidents
-GROUP BY City_Name,Cause_Subcategory ORDER BY Total_Accident DESC;
+/* ---------- Identifying the most dangerous cause (Cause_Subcategory) in each Cause Category, by deaths across all cities ---------- */
+-- 'Others' appears in every category, so each subcategory is kept together with its category.
+-- In Traffic Violation, the label 'Over' is over-speeding (the source file cut the text at the hyphen).
+WITH deaths_by_cause AS
+(
+SELECT Cause_Category,Cause_Subcategory,SUM(Count_in_mil) AS Persons_Killed,
+RANK() OVER(PARTITION BY Cause_Category ORDER BY SUM(Count_in_mil) DESC) AS Danger_Rank
+FROM Accidents WHERE Outcome_of_Incident = 'Persons Killed'
+GROUP BY Cause_Category,Cause_Subcategory
+)
+SELECT Cause_Category,Cause_Subcategory,Persons_Killed FROM deaths_by_cause WHERE Danger_Rank = 1 ORDER BY Persons_Killed DESC;
