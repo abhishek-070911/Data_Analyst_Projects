@@ -55,7 +55,7 @@ SELECT * FROM Patients;
 SELECT DISTINCT Ethnicity FROM Patients;
 
 
-/* ---------- Filtering patients with Age > 50 ---------- */
+/* ---------- Filtering patients aged 50 and over ---------- */
 SELECT * FROM Patients WHERE Age >=50 ORDER BY Age DESC;
 
 
@@ -89,7 +89,7 @@ SELECT * FROM Patients ORDER BY `Y-BOCS_Score_Obsessions` DESC LIMIT 5;
 
 
 /* ---------- Finding how many patients are on SSRIs ---------- */
-SELECT * FROM Patients WHERE Medications = 'SSRI';
+SELECT COUNT(*) AS SSRI_Patients FROM Patients WHERE Medications = 'SSRI';
 
 
 /* ---------- Calculating average Y-BOCS scores for each Gender. ---------- */
@@ -103,9 +103,16 @@ ROUND(AVG(`Y-BOCS_Score_Obsessions`),2) + ROUND(AVG(`Y-BOCS_Score_Compulsions`),
 FROM Patients GROUP BY Ethnicity ORDER BY Total_Score DESC;
 
 
+/* ---------- Checking whether Patient_ID is unique ---------- */
+SELECT Patient_ID, COUNT(*) AS Rows_With_ID FROM Patients GROUP BY Patient_ID HAVING COUNT(*) > 1 ORDER BY Rows_With_ID DESC;
+-- 99 IDs appear on more than one row (206 rows in all, up to 4 per ID). Within every one of them the
+-- diagnosis dates differ, so these are different patients, and Patient_ID can't be used as the patient key.
+
+
 /* ---------- Ranking patients by total Y-BOCS score using RANK() ---------- */
-SELECT Patient_ID, ROUND(SUM(`Y-BOCS_Score_Obsessions`),2) + ROUND(SUM(`Y-BOCS_Score_Compulsions`),2) AS Total_Score,
- RANK() OVER(ORDER BY ROUND(SUM(`Y-BOCS_Score_Obsessions`),2) + ROUND(SUM(`Y-BOCS_Score_Compulsions`),2) DESC) `Rank` FROM Patients GROUP BY Patient_ID;
+-- Each row is one patient, so rank rows. Grouping by Patient_ID would add up to four patients' scores together.
+SELECT Patient_ID, Age, Gender, Ethnicity, (`Y-BOCS_Score_Obsessions` + `Y-BOCS_Score_Compulsions`) AS Total_Score,
+ RANK() OVER(ORDER BY (`Y-BOCS_Score_Obsessions` + `Y-BOCS_Score_Compulsions`) DESC) `Rank` FROM Patients;
 
 
 /* ---------- Calculating percentage of patients with Depression in each Education Level ---------- */
@@ -124,7 +131,7 @@ FROM Patients ) AS score
 WHERE Top_3_Rank IN(1,2,3) ORDER BY Ethnicity,Top_3_Rank;
 
 
-/* ---------- Computing average Age per Medication type, then select only those above 40 ---------- */
+/* ---------- Computing average Age per Medication type, then select only those above 47 ---------- */
 WITH avg_age_medication AS(
 SELECT Medications, ROUND(AVG(Age),2) AS Avg_Age FROM Patients GROUP BY Medications 
 )
